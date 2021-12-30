@@ -48,8 +48,6 @@ ingress:
 node:
   # -- Deploy a tdarr node.
   enabled: true
-  # -- Node ID
-  id: node
   image:
     # -- image repository
     repository: haveagitgat/tdarr_node
@@ -58,7 +56,55 @@ node:
     # -- image pull policy
     pullPolicy: IfNotPresent
   # -- Node resources
-  resources: {}
+#  resources:
+#    requests:
+#      gpu.intel.com/i915: 1
+#    limits:
+#      gpu.intel.com/i915: 1
+#    limits:
+#      cpu: 100m
+#      memory: 128Mi
+#    requests:
+#      cpu: 100m
+#      memory: 128Mi
+#  volumeClaimTemplates:
+#  - name: data
+#    mountPath: /data
+#    accessMode: "ReadWriteOnce"
+#    size: 1Gi
+#  - name: backup
+#    mountPath: /backup
+#    subPath: theSubPath
+#    accessMode: "ReadWriteOnce"
+#    size: 2Gi
+#    storageClass: cheap-storage-class
+#  labels:
+#    kubernetes.io/tls-acme: "true"
+#  annotations:
+#    kubernetes.io/ingress.class: nginx
+  replicas: 3
+  strategy: RollingUpdate
+  rollingUpdate:
+    unavailable: 2
+    surge: 3
+  revisionHistoryLimit: 1
+  probes:
+    liveness:
+      enabled: false
+    readiness:
+      enabled: false
+    startup:
+      enabled: false
+  service:
+    node:
+      enabled: true
+      ports:
+        node:
+          enabled: true
+          port: 8267
+          protocol: TCP
+      type: ClusterIP
+      clusterIP: None
 
 # -- Configure persistence settings for the chart under this key.
 # @default -- See below
@@ -66,8 +112,9 @@ persistence:
   # -- Volume used for configuration
   # @default -- See values.yaml
   config:
-    enabled: false
+    enabled: true
     mountpath: /app/configs
+    accessMode: ReadWriteMany
 
   # -- Volume used for tdarr server database
   # @default -- See values.yaml
