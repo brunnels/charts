@@ -105,7 +105,7 @@ nodePort: {{ .Values.nodes.service.main.ports.node.port }}
 ffmpegPath: {{ default "" .Values.env.ffmpegPath }}
 {{- end -}}
 
-{{- define "hardcoded.node" -}}
+{{- define "hardcoded.nodes" -}}
 {{ if .Values.nodes.enabled }}
 image:
   repository: {{ .Values.nodes.image.repository }}
@@ -127,10 +127,10 @@ controller:
   {{- $env := mergeOverwrite (include "hardcoded.nodes.env" . | fromYaml) (default dict .Values.nodes.env) -}}
   {{- $_ := set .Values "env" $env -}}
 
-  {{/* Merge hardcoded.node values */}}
-  {{- $_ := mergeOverwrite .Values (include "hardcoded.node" . | fromYaml) -}}
+  {{/* Merge hardcoded.nodes values */}}
+  {{- $_ := mergeOverwrite .Values (include "hardcoded.nodes" . | fromYaml) -}}
 
-  {{/* Set various node values */}}
+  {{/* Set various nodes values */}}
   {{- $_ := set .Values "controller.annotations" .Values.nodes.annotations -}}
   {{- $_ := set .Values "controller.labels" (default dict .Values.nodes.labels) -}}
   {{- $_ := set .Values "controller.replicas" (default 3 .Values.nodes.replicas) -}}
@@ -143,13 +143,13 @@ controller:
   {{- $_ := set .Values "service" (default dict .Values.nodes.service) -}}
   {{- $_ := set .Values "volumeClaimTemplates" (default dict .Values.nodes.volumeClaimTemplates) -}}
 
-  {{/* Render the node PVC's */}}
+  {{/* Render the nodes PVC's */}}
   {{- include "common.pvc" . | nindent 0 }}
 
-  {{/* Render the node Service */}}
+  {{/* Render the nodes Service */}}
   {{- include "common.service" . | nindent 0 }}
 
-  {{/* Render the node StatefulSet */}}
+  {{/* Render the nodes StatefulSet */}}
   {{- include "common.statefulset" . | nindent 0 }}
 
 {{- end }}
