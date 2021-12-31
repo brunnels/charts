@@ -46,8 +46,10 @@ ingress:
     enabled: false
 
 node:
-  # -- Deploy a tdarr node.
-  enabled: true
+  # -- Deploy a single tdarr node rather than a server.
+  enabled: false
+  # -- Node ID
+  id: node
   image:
     # -- image repository
     repository: haveagitgat/tdarr_node
@@ -56,55 +58,7 @@ node:
     # -- image pull policy
     pullPolicy: IfNotPresent
   # -- Node resources
-#  resources:
-#    requests:
-#      gpu.intel.com/i915: 1
-#    limits:
-#      gpu.intel.com/i915: 1
-#    limits:
-#      cpu: 100m
-#      memory: 128Mi
-#    requests:
-#      cpu: 100m
-#      memory: 128Mi
-#  volumeClaimTemplates:
-#  - name: data
-#    mountPath: /data
-#    accessMode: "ReadWriteOnce"
-#    size: 1Gi
-#  - name: backup
-#    mountPath: /backup
-#    subPath: theSubPath
-#    accessMode: "ReadWriteOnce"
-#    size: 2Gi
-#    storageClass: cheap-storage-class
-#  labels:
-#    kubernetes.io/tls-acme: "true"
-#  annotations:
-#    kubernetes.io/ingress.class: nginx
-  replicas: 3
-  strategy: RollingUpdate
-  rollingUpdate:
-    unavailable: 2
-    surge: 3
-  revisionHistoryLimit: 1
-  probes:
-    liveness:
-      enabled: false
-    readiness:
-      enabled: false
-    startup:
-      enabled: false
-  service:
-    node:
-      enabled: true
-      ports:
-        node:
-          enabled: true
-          port: 8267
-          protocol: TCP
-      type: ClusterIP
-      clusterIP: None
+  resources: {}
 
 # -- Configure persistence settings for the chart under this key.
 # @default -- See below
@@ -112,9 +66,8 @@ persistence:
   # -- Volume used for configuration
   # @default -- See values.yaml
   config:
-    enabled: true
+    enabled: false
     mountpath: /app/configs
-    accessMode: ReadWriteMany
 
   # -- Volume used for tdarr server database
   # @default -- See values.yaml
@@ -133,3 +86,227 @@ persistence:
   shared:
     enabled: false
     mountpath: /shared
+
+# -- Defines server affinity constraint rules.
+# [[ref]](https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#affinity-and-anti-affinity)
+affinity: {}
+#  nodeAffinity:
+#    preferredDuringSchedulingIgnoredDuringExecution:
+#      - weight: 1
+#        preference:
+#          matchExpressions:
+#            - key: node-role.kubernetes.io/nvidia
+#              operator: NotIn
+#              values:
+#                - "true"
+#      - weight: 1
+#        preference:
+#          matchExpressions:
+#            - key: feature.node.kubernetes.io/pci-0300_8086.present
+#              operator: NotIn
+#              values:
+#                - "true"
+
+nodes:
+  # -- Deploy a tdarr node StatefulSet.
+  enabled: true
+  # -- Set an override for the prefix of the fullname
+  nameOverride: nodes
+  image:
+    # -- image repository
+    repository: haveagitgat/tdarr_node
+    # -- image tag
+    tag: 2.00.10
+    # -- image pull policy
+    pullPolicy: IfNotPresent
+  # -- Node persistence
+  # Additional items can be added by adding a dictionary key similar to the 'config' key.
+  # @default -- See below
+  persistence:
+    # -- Default persistence for configuration files.
+    # @default -- See below
+    config:
+      # -- Enables or disables the persistence item
+      enabled: false
+      # -- Sets the persistence type
+      # Valid options are pvc, emptyDir, hostPath or custom
+      type: pvc
+      # -- Where to mount the volume in the main container.
+      # Defaults to `/<name_of_the_volume>`,
+      # setting to '-' creates the volume but disables the volumeMount.
+      mountPath:  # /config
+      # -- Specify if the volume should be mounted read-only.
+      readOnly: false
+      # -- Override the name suffix that is used for this volume.
+      nameOverride:
+      # -- Storage Class for the config volume.
+      # If set to `-`, dynamic provisioning is disabled.
+      # If set to something else, the given storageClass is used.
+      # If undefined (the default) or set to null, no storageClassName spec is set, choosing the default provisioner.
+      storageClass:  # "-"
+      # -- If you want to reuse an existing claim, the name of the existing PVC can be passed here.
+      existingClaim:  # your-claim
+      # -- Used in conjunction with `existingClaim`. Specifies a sub-path inside the referenced volume instead of its root
+      subPath:  # some-subpath
+      # -- AccessMode for the persistent volume.
+      # Make sure to select an access mode that is supported by your storage provider!
+      # [[ref]](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#access-modes)
+      accessMode: ReadWriteOnce
+      # -- The amount of storage that is requested for the persistent volume.
+      size: 1Gi
+      # - Set to true to retain the PVC upon `helm uninstall`
+      skipuninstall: false
+  # -- Set the resource requests / limits for each nodes pod.
+  resources:
+#    limits:
+#      cpu: 100m
+#      memory: 128Mi
+#    requests:
+#      cpu: 100m
+#      memory: 128Mi
+  # -- Used to create individual disks for each stateful set pod.
+  volumeClaimTemplates: []
+    # - name: data
+    #   mountPath: /data
+    #   accessMode: "ReadWriteOnce"
+    #   size: 1Gi
+    # - name: backup
+    #   mountPath: /backup
+    #   subPath: theSubPath
+    #   accessMode: "ReadWriteOnce"
+    #   size: 2Gi
+    #   storageClass: cheap-storage-class
+    # -- Set labels on the nodes statefulset
+  labels: {}
+  # -- Set annotations on the nodes statefulset
+  annotations: {}
+  # -- Number of desired pods
+  replicas: 3
+  # -- Set the controller upgrade strategy
+  # For StatefulSets, valid values are OnDelete and RollingUpdate (default).
+  strategy: RollingUpdate
+  rollingUpdate:
+    # -- Set statefulset RollingUpdate partition
+    partition:
+  # -- nodes pod environment variables. Template enabled.
+  # Syntax options:
+  # A) TZ: UTC
+  # B) PASSWD: '{{ .Release.Name }}'
+  # C) PASSWD:
+  #      envFrom:
+  #        ...
+  # D) - name: TZ
+  #      value: UTC
+  # E) - name: TZ
+  #      value: '{{ .Release.Name }}'
+  env:
+#    NVIDIA_DRIVER_CAPABILITIES: all
+#    NVIDIA_VISIBLE_DEVICES: all
+  # -- Defines nodes pod affinity constraint rules.
+  # [[ref]](https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#affinity-and-anti-affinity)
+  affinity: {}
+#    nodeAffinity:
+#      requiredDuringSchedulingIgnoredDuringExecution:
+#        nodeSelectorTerms:
+#          - matchExpressions:
+#              - key: node-role.kubernetes.io/nvidia
+#                operator: In
+#                values:
+#                  - "true"
+#          - matchExpressions:
+#              - key: feature.node.kubernetes.io/pci-0300_8086.present
+#                operator: In
+#                values:
+#                  - "true"
+  # -- nodes pod probe configuration
+  # -- [[ref]](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/)
+  # @default -- See below
+  probes:
+    # -- Liveness probe configuration
+    # @default -- See below
+    liveness:
+      # -- Enable the liveness probe
+      enabled: false
+      # -- Set this to `true` if you wish to specify your own livenessProbe
+      custom: false
+      # -- The spec field contains the values for the default livenessProbe.
+      # If you selected `custom: true`, this field holds the definition of the livenessProbe.
+      # @default -- See below
+      spec:
+        initialDelaySeconds: 0
+        periodSeconds: 10
+        timeoutSeconds: 1
+        failureThreshold: 3
+    # -- Reaainess probe configuration
+    # @default -- See below
+    readiness:
+      # -- Enable the readiness probe
+      enabled: false
+      # -- Set this to `true` if you wish to specify your own readinessProbe
+      custom: false
+      # -- The spec field contains the values for the default readinessProbe.
+      # If you selected `custom: true`, this field holds the definition of the readinessProbe.
+      # @default -- See below
+      spec:
+        initialDelaySeconds: 0
+        periodSeconds: 10
+        timeoutSeconds: 1
+        failureThreshold: 3
+    # -- Startup probe configuration
+    # @default -- See below
+    startup:
+      # -- Enable the startup probe
+      enabled: false
+      # -- Set this to `true` if you wish to specify your own startupProbe
+      custom: false
+      # -- The spec field contains the values for the default startupProbe.
+      # If you selected `custom: true`, this field holds the definition of the startupProbe.
+      # @default -- See below
+      spec:
+        initialDelaySeconds: 0
+        timeoutSeconds: 1
+        ## This means it has a maximum of 5*30=150 seconds to start up before it fails
+        periodSeconds: 5
+  # -- Configure the services for the nodes statefulset here.
+  # Additional services can be added by adding a dictionary key similar to the 'main' service.
+  # @default -- See below
+  service:
+    main:
+      # -- Enables or disables the service
+      enabled: true
+      # -- Make this the primary service (used in probes, notes, etc...).
+      # If there is more than 1 service, make sure that only 1 service is marked as primary.
+      primary: true
+      # -- Override the name suffix that is used for this service
+      nameOverride:
+      # -- Set the service type
+      type: ClusterIP
+      # -- Hardcoded clusterIP address. None is used for statefulset pod to pod service
+      clusterIP: None
+      # -- Provide additional annotations which may be required.
+      annotations: {}
+      # -- Provide additional labels which may be required.
+      labels: {}
+      # -- Configure the Service port information here.
+      # Additional ports can be added by adding a dictionary key similar to the 'node' service.
+      # @default -- See below
+      ports:
+        node:
+          # -- Enables or disables the port
+          enabled: true
+          # -- Make this the primary port (used in probes, notes, etc...)
+          # If there is more than 1 service, make sure that only 1 port is marked as primary.
+          primary: true
+          # -- The port number
+          port: 8267
+          # -- Port protocol.
+          # Support values are `HTTP`, `HTTPS`, `TCP` and `UDP`.
+          protocol: TCP
+          # -- Specify a service targetPort if you wish to differ the service port from the application port.
+          # If `targetPort` is specified, this port number is used in the container definition instead of
+          # the `port` value. Therefore named ports are not supported for this field.
+          targetPort:
+          # -- Specify the nodePort value for the LoadBalancer and NodePort service types.
+          # [[ref]](https://kubernetes.io/docs/concepts/services-networking/service/#type-nodeport)
+          nodePort:
+

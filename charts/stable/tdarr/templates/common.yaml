@@ -1,114 +1,156 @@
 {{- include "common.values.setup" . }}
 
+{{/* Append the hardcoded settings */}}
+{{- define "tdarr.harcodedValues" -}}
+{{ if .Values.node.enabled }}
+additionalContainers:
+  node:
+    name: node
+    image: "{{ .Values.node.image.repository }}:{{ .Values.node.image.tag }}"
+    imagePullPolicy: {{ .Values.node.image.pullPolicy }}
+    env:
+      - name: TZ
+        value: {{ default "UTC" .Values.env.TZ }}
+      - name: nodeID
+        value: {{ default "UTC" .Values.node.id }}
+      - name: serverIP
+        value: "localhost"
+      - name: serverPort
+        value: "{{ .Values.service.main.ports.server.port }}"
+      - name: ffmpegPath
+        value: {{ default "" .Values.env.ffmpegPath }}
+    volumeMounts:
+      {{ if .Values.persistence.config.enabled }}
+      - name: config
+        mountPath: /app/configs
+      {{ end }}
+      {{ if .Values.persistence.media.enabled }}
+      - name: media
+        mountPath: /media
+      {{ end }}
+      {{ if .Values.persistence.shared.enabled }}
+      - name: shared
+        mountPath: /shared
+      {{ end }}
+    {{- with .Values.node.resources }}
+    resources:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+{{ end }}
+{{- end -}}
+{{- $_ := mergeOverwrite .Values (include "tdarr.harcodedValues" . | fromYaml) -}}
+
+{{- define "hardcoded.affinity" -}}
+{{ if .Values.nodes.enabled }}
+podAntiAffinity:
+  preferredDuringSchedulingIgnoredDuringExecution:
+    - podAffinityTerm:
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: {{ .Values.nodes.nameOverride }}
+            app.kubernetes.io/instance: {{ .Release.Name }}
+            app.kubernetes.io/component: {{ include "common.names.fullname" . }}-node
+        namespaces:
+          - {{ .Release.Namespace }}
+        topologyKey: kubernetes.io/hostname
+      weight: 1
+{{ end }}
+{{- end -}}
+
+{{/* Merge affinity with hardcoded.affinity */}}
+{{- $affinity := mergeOverwrite (include "hardcoded.affinity" . | fromYaml) (default dict .Values.affinity) -}}
+{{- $_ := set .Values "affinity" $affinity -}}
+
 {{/* Render the templates */}}
 {{ include "common.all" . }}
 
-{{- define "tdarr.statefulset" -}}
-{{ if .Values.node.enabled }}
-nameOverride: node
+{{- define "hardcoded.nodes.affinity" -}}
+podAntiAffinity:
+  preferredDuringSchedulingIgnoredDuringExecution:
+    - podAffinityTerm:
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: {{ include "common.names.name" . }}
+            app.kubernetes.io/instance: {{ .Release.Name }}
+            app.kubernetes.io/component: {{ include "common.names.fullname" . }}
+        namespaces:
+          - {{ .Release.Namespace }}
+        topologyKey: kubernetes.io/hostname
+      weight: 1
+    - podAffinityTerm:
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: {{ .Values.nodes.nameOverride }}
+            app.kubernetes.io/instance: {{ .Release.Name }}
+            app.kubernetes.io/component: {{ include "common.names.fullname" . }}-node
+        namespaces:
+          - {{ .Release.Namespace }}
+        topologyKey: kubernetes.io/hostname
+      weight: 1
+{{- end -}}
+
+{{- define "hardcoded.nodes.env" -}}
+TZ: {{ default "UTC" .Values.env.TZ }}
+nodeID:
+  valueFrom:
+    fieldRef:
+      fieldPath: metadata.name
+serverIP: {{ include "common.names.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local
+serverPort: {{ .Values.service.main.ports.server.port }}
+nodeIP:
+  valueFrom:
+    fieldRef:
+      fieldPath: status.podIP
+nodePort: {{ .Values.nodes.service.main.ports.node.port }}
+ffmpegPath: {{ default "" .Values.env.ffmpegPath }}
+{{- end -}}
+
+{{- define "hardcoded.node" -}}
+{{ if .Values.nodes.enabled }}
 image:
-  repository: {{ .Values.node.image.repository }}
-  tag: {{ .Values.node.image.tag }}
-  pullPolicy: {{ .Values.node.image.pullPolicy }}
+  repository: {{ .Values.nodes.image.repository }}
+  tag: {{ .Values.nodes.image.tag }}
+  pullPolicy: {{ .Values.nodes.image.pullPolicy }}
 podLabels:
-    app.kubernetes.io/component: {{ include "common.names.fullname" . }}-node
-affinity:
-  podAntiAffinity:
-    preferredDuringSchedulingIgnoredDuringExecution:
-      - podAffinityTerm:
-          labelSelector:
-            matchLabels:
-              app.kubernetes.io/name: node
-              app.kubernetes.io/instance: {{ .Release.Name }}
-              app.kubernetes.io/component: {{ include "common.names.fullname" . }}-node
-          namespaces:
-            - {{ .Release.Namespace }}
-          topologyKey: kubernetes.io/hostname
-        weight: 1
-env:
-  TZ: {{ default "UTC" .Values.env.TZ }}
-  nodeID:
-    valueFrom:
-      fieldRef:
-        fieldPath: metadata.name
-  serverIP: tdarr.tdarr.svc.cluster.local
-  serverPort: {{ .Values.service.main.ports.server.port }}
-  nodeIP:
-    valueFrom:
-      fieldRef:
-        fieldPath: status.podIP
-  nodePort: 8267
-  ffmpegPath: {{ default "" .Values.env.ffmpegPath }}
-{{- with .Values.node.resources }}
-resources:
-{{- toYaml . | nindent 4 }}
-{{- end }}
-
-{{ if .Values.node.volumeClaimTemplates }}
-volumeClaimTemplates: {{ .Values.node.volumeClaimTemplates | toJson | indent 4 }}
-{{ end }}
-
-{{ if .Values.node.probes }}
-probes: {{ .Values.node.probes | toJson | indent 4 }}
-{{ end }}
-
-{{ if .Values.node.service }}
-service: {{ .Values.node.service | toJson | indent 4 }}
-{{ end }}
-
+  app.kubernetes.io/component: {{ include "common.names.fullname" . }}-node
 controller:
   annotations: {}
-{{ if .Values.node.annotations }}
-{{- with .Values.node.annotations }}
-  annotations:
-{{- toYaml . | nindent 4 }}
-{{- end }}
-{{ end }}
-
-  labels: {}
-{{ if .Values.node.labels }}
-{{- with .Values.node.labels }}
-  labels:
-{{- toYaml . | nindent 4 }}
-{{- end }}
-{{ else }}
-  labels: {}
-{{ end }}
-
-{{ if .Values.node.replicas }}
-  replicas: {{ .Values.node.replicas }}
-{{ end }}
-
-{{ if .Values.node.revisionHistoryLimit }}
-  revisionHistoryLimit: {{ .Values.node.revisionHistoryLimit }}
-{{ end }}
-
-{{ if .Values.node.rollingUpdate }}
-  rollingUpdate:
-    {{ .Values.node.rollingUpdate | toJson | indent 6 }}
-{{ end }}
-
-{{ if .Values.node.strategy }}
-  strategy: {{ .Values.node.strategy }}
-{{ end }}
-
 {{ end }}
 {{- end -}}
-{{ if .Values.node.enabled }}
 
-{{- $nodeValues := (include "tdarr.statefulset" . | fromYaml) -}}
-{{- $_ := mergeOverwrite .Values $nodeValues -}}
-{{- $_ := set .Values "service" $nodeValues.service -}}
-{{- $_ := set .Values "env" $nodeValues.env -}}
+{{ if .Values.nodes.enabled }}
+  {{/* Merge nodes.affinity with hardcoded nodes.affinity */}}
+  {{- $affinity := mergeOverwrite (include "hardcoded.nodes.affinity" . | fromYaml) (default dict .Values.nodes.affinity) -}}
+  {{- $_ := set .Values "affinity" $affinity -}}
 
-{{/* Render the node PVC's */}}
-{{- include "common.pvc" . | nindent 0 }}
+  {{/* Merge nodes.env with hardcoded nodes.env */}}
+  {{- $env := mergeOverwrite (include "hardcoded.nodes.env" . | fromYaml) (default dict .Values.nodes.env) -}}
+  {{- $_ := set .Values "env" $env -}}
 
-{{/* Render the node Service */}}
-{{- include "common.service" . | nindent 0 }}
+  {{/* Merge hardcoded.node values */}}
+  {{- $_ := mergeOverwrite .Values (include "hardcoded.node" . | fromYaml) -}}
 
-{{/* Render the node StatefulSet */}}
-{{- include "common.statefulset" . | nindent 0 }}
+  {{/* Set various node values */}}
+  {{- $_ := set .Values "controller.annotations" .Values.nodes.annotations -}}
+  {{- $_ := set .Values "controller.labels" (default dict .Values.nodes.labels) -}}
+  {{- $_ := set .Values "controller.replicas" (default 3 .Values.nodes.replicas) -}}
+  {{- $_ := set .Values "controller.strategy" (default "RollingUpdate" .Values.nodes.strategy) -}}
+  {{- $_ := set .Values "nameOverride" .Values.nodes.nameOverride -}}
+  {{- $_ := set .Values "persistence" (default dict .Values.nodes.persistence) -}}
+  {{- $_ := set .Values "probes" (default dict .Values.nodes.probes) -}}
+  {{- $_ := set .Values "resources" (default dict .Values.nodes.resources) -}}
+  {{- $_ := set .Values "rollingUpdate" (default dict .Values.nodes.rollingUpdate) -}}
+  {{- $_ := set .Values "service" (default dict .Values.nodes.service) -}}
+  {{- $_ := set .Values "volumeClaimTemplates" (default dict .Values.nodes.volumeClaimTemplates) -}}
+
+  {{/* Render the node PVC's */}}
+  {{- include "common.pvc" . | nindent 0 }}
+
+  {{/* Render the node Service */}}
+  {{- include "common.service" . | nindent 0 }}
+
+  {{/* Render the node StatefulSet */}}
+  {{- include "common.statefulset" . | nindent 0 }}
 
 {{- end }}
 
