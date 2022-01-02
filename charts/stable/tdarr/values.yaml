@@ -21,7 +21,10 @@ env:
   # -- tdarr web UI listening port (same as Service port)
   webUIPort: "{{ .Values.service.main.ports.http.port }}"
   # -- tdarr server binding address
-  serverIP: 0.0.0.0
+  serverIP:
+    valueFrom:
+      fieldRef:
+        fieldPath: status.podIP
   # -- tdarr server listening port
   serverPort: "{{ .Values.service.main.ports.server.port }}"
   # -- Allow override for the pre-compiled tdarr ffmpeg binary
@@ -67,25 +70,30 @@ persistence:
   # @default -- See values.yaml
   config:
     enabled: false
-    mountpath: /app/configs
+    mountPath: /app/configs
+    size: 500Mi
 
   # -- Volume used for tdarr server database
   # @default -- See values.yaml
   data:
     enabled: false
-    mountpath: /app/server
+    mountPath: /app/server
+    size: 4Gi
 
   # -- Volume used for media libraries
   # @default -- See values.yaml
   media:
     enabled: false
-    mountpath: /media
+    mountPath: /media
 
   # -- Volume used for shared storage. e.g. emptydir transcode
   # @default -- See values.yaml
   shared:
     enabled: false
-    mountpath: /shared
+    type: pvc
+    mountPath: /temp
+    accessMode: ReadWriteMany
+    size: 60Gi
 
 # -- Defines server affinity constraint rules.
 # [[ref]](https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#affinity-and-anti-affinity)
@@ -109,7 +117,7 @@ affinity: {}
 
 nodes:
   # -- Deploy a tdarr node StatefulSet.
-  enabled: true
+  enabled: false
   # -- Set an override for the prefix of the fullname
   nameOverride: nodes
   image:
@@ -123,39 +131,20 @@ nodes:
   # Additional items can be added by adding a dictionary key similar to the 'config' key.
   # @default -- See below
   persistence:
-    # -- Default persistence for configuration files.
-    # @default -- See below
-    config:
-      # -- Enables or disables the persistence item
+    # -- Volume used for media libraries
+    # @default -- See values.yaml
+    media:
       enabled: false
-      # -- Sets the persistence type
-      # Valid options are pvc, emptyDir, hostPath or custom
-      type: pvc
-      # -- Where to mount the volume in the main container.
-      # Defaults to `/<name_of_the_volume>`,
-      # setting to '-' creates the volume but disables the volumeMount.
-      mountPath:  # /config
-      # -- Specify if the volume should be mounted read-only.
-      readOnly: false
-      # -- Override the name suffix that is used for this volume.
-      nameOverride:
-      # -- Storage Class for the config volume.
-      # If set to `-`, dynamic provisioning is disabled.
-      # If set to something else, the given storageClass is used.
-      # If undefined (the default) or set to null, no storageClassName spec is set, choosing the default provisioner.
-      storageClass:  # "-"
-      # -- If you want to reuse an existing claim, the name of the existing PVC can be passed here.
-      existingClaim:  # your-claim
-      # -- Used in conjunction with `existingClaim`. Specifies a sub-path inside the referenced volume instead of its root
-      subPath:  # some-subpath
-      # -- AccessMode for the persistent volume.
-      # Make sure to select an access mode that is supported by your storage provider!
-      # [[ref]](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#access-modes)
-      accessMode: ReadWriteOnce
-      # -- The amount of storage that is requested for the persistent volume.
-      size: 1Gi
-      # - Set to true to retain the PVC upon `helm uninstall`
-      skipuninstall: false
+      mountPath: /media
+
+    # -- Volume used for shared storage. e.g. emptydir transcode.
+    # it needs to be shared with the server so default is the server PVC
+    # @default -- See values.yaml
+    shared:
+      enabled: false
+      mountPath: /temp
+      existingClaim: tdarr-shared
+
   # -- Set the resource requests / limits for each nodes pod.
   resources:
 #    limits:
@@ -165,23 +154,19 @@ nodes:
 #      cpu: 100m
 #      memory: 128Mi
   # -- Used to create individual disks for each stateful set pod.
-  volumeClaimTemplates: []
-    # - name: data
-    #   mountPath: /data
-    #   accessMode: "ReadWriteOnce"
-    #   size: 1Gi
-    # - name: backup
-    #   mountPath: /backup
-    #   subPath: theSubPath
-    #   accessMode: "ReadWriteOnce"
-    #   size: 2Gi
-    #   storageClass: cheap-storage-class
-    # -- Set labels on the nodes statefulset
+  volumeClaimTemplates:
+    config:
+      name: config
+      mountPath: /app/configs
+      accessMode: "ReadWriteOnce"
+      size: 500Mi
+  # -- Set labels on the nodes statefulset
   labels: {}
   # -- Set annotations on the nodes statefulset
   annotations: {}
   # -- Number of desired pods
   replicas: 3
+  podManagementPolicy:
   # -- Set the controller upgrade strategy
   # For StatefulSets, valid values are OnDelete and RollingUpdate (default).
   strategy: RollingUpdate
@@ -221,6 +206,10 @@ nodes:
   # -- nodes pod probe configuration
   # -- [[ref]](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/)
   # @default -- See below
+  # -- Specify any initContainers here. Yaml will be passed in to the Pod as-is.
+  initContainers: []
+  # -- Specify any additional containers here. Yaml will be passed in to the Pod as-is.
+  additionalContainers: []
   probes:
     # -- Liveness probe configuration
     # @default -- See below

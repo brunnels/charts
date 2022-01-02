@@ -105,8 +105,17 @@ nodePort: {{ .Values.nodes.service.main.ports.node.port }}
 ffmpegPath: {{ default "" .Values.env.ffmpegPath }}
 {{- end -}}
 
+{{- define "hardcoded.nodes.initContainers" -}}
+wait-for-server:
+  image: owncloudci/wait-for
+  command:
+    - /usr/bin/wait-for
+  args:
+    - -it
+    - {{ include "common.names.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.main.ports.server.port }}
+{{- end -}}
+
 {{- define "hardcoded.nodes" -}}
-{{ if .Values.nodes.enabled }}
 image:
   repository: {{ .Values.nodes.image.repository }}
   tag: {{ .Values.nodes.image.tag }}
@@ -114,34 +123,40 @@ image:
 podLabels:
   app.kubernetes.io/component: {{ include "common.names.fullname" . }}-node
 controller:
-  annotations: {}
-{{ end }}
+  type: statefulset
 {{- end -}}
 
 {{ if .Values.nodes.enabled }}
-  {{/* Merge nodes.affinity with hardcoded nodes.affinity */}}
-  {{- $affinity := mergeOverwrite (include "hardcoded.nodes.affinity" . | fromYaml) (default dict .Values.nodes.affinity) -}}
+  {{/* Merge nodes.affinity with hardcoded.nodes.affinity */}}
+  {{- $affinity := mergeOverwrite (include "hardcoded.nodes.affinity" . | fromYaml) .Values.nodes.affinity -}}
   {{- $_ := set .Values "affinity" $affinity -}}
 
-  {{/* Merge nodes.env with hardcoded nodes.env */}}
+  {{/* Merge nodes.env with hardcoded.nodes.env */}}
   {{- $env := mergeOverwrite (include "hardcoded.nodes.env" . | fromYaml) (default dict .Values.nodes.env) -}}
   {{- $_ := set .Values "env" $env -}}
+
+  {{/* Merge nodes.initContainers with hardcoded.nodes.initContainers */}}
+  {{- $initContainers := mergeOverwrite (include "hardcoded.nodes.initContainers" . | fromYaml) (default dict .Values.nodes.initContainers) -}}
+  {{- $_ := set .Values "initContainers" $initContainers -}}
 
   {{/* Merge hardcoded.nodes values */}}
   {{- $_ := mergeOverwrite .Values (include "hardcoded.nodes" . | fromYaml) -}}
 
   {{/* Set various nodes values */}}
-  {{- $_ := set .Values "controller.annotations" .Values.nodes.annotations -}}
-  {{- $_ := set .Values "controller.labels" (default dict .Values.nodes.labels) -}}
-  {{- $_ := set .Values "controller.replicas" (default 3 .Values.nodes.replicas) -}}
-  {{- $_ := set .Values "controller.strategy" (default "RollingUpdate" .Values.nodes.strategy) -}}
+  {{- $_ := set .Values.controller "annotations" .Values.nodes.annotations -}}
+  {{- $_ := set .Values.controller "labels" .Values.nodes.labels -}}
+  {{- $_ := set .Values.controller "podManagementPolicy" .Values.nodes.podManagementPolicy -}}
+  {{- $_ := set .Values.controller "replicas" .Values.nodes.replicas -}}
+  {{- $_ := set .Values.controller "strategy" .Values.nodes.strategy -}}
+
+  {{- $_ := set .Values "additionalContainers" .Values.nodes.additionalContainers -}}
   {{- $_ := set .Values "nameOverride" .Values.nodes.nameOverride -}}
-  {{- $_ := set .Values "persistence" (default dict .Values.nodes.persistence) -}}
-  {{- $_ := set .Values "probes" (default dict .Values.nodes.probes) -}}
-  {{- $_ := set .Values "resources" (default dict .Values.nodes.resources) -}}
-  {{- $_ := set .Values "rollingUpdate" (default dict .Values.nodes.rollingUpdate) -}}
-  {{- $_ := set .Values "service" (default dict .Values.nodes.service) -}}
-  {{- $_ := set .Values "volumeClaimTemplates" (default dict .Values.nodes.volumeClaimTemplates) -}}
+  {{- $_ := set .Values "persistence" .Values.nodes.persistence -}}
+  {{- $_ := set .Values "probes" .Values.nodes.probes -}}
+  {{- $_ := set .Values "resources" .Values.nodes.resources -}}
+  {{- $_ := set .Values "rollingUpdate" .Values.nodes.rollingUpdate -}}
+  {{- $_ := set .Values "service" .Values.nodes.service -}}
+  {{- $_ := set .Values "volumeClaimTemplates" .Values.nodes.volumeClaimTemplates -}}
 
   {{/* Render the nodes PVC's */}}
   {{- include "common.pvc" . | nindent 0 }}
@@ -153,4 +168,3 @@ controller:
   {{- include "common.statefulset" . | nindent 0 }}
 
 {{- end }}
-
